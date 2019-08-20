@@ -1,0 +1,445 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: This template deploys one or more EC2 instances with SLES12SP3 AMI 
+  and deployes different NetIQ Access Manager 4.4 SP1 componentes based on the 
+  selection made in the parameter list.
+  **WARNING** This template creates Amazon EC2 SLES12SP3 instance and
+  related resources. You will be billed for the AWS resources used if you create a
+  stack from this template. Also, you are solely responsible for complying with the
+  license terms for the software downloaded and installed by this template. By creating
+  a stack from this template, you are agreeing to such terms.
+
+Parameters:
+  AdminName:
+    Description: Access Manager administrator name
+    Type: String
+    Default: admin
+    ConstraintDescription: Choose the name for the Access Manager Administraror
+  AdminPassword:
+    Description: Administrator password
+    Type: String
+    NoEcho: True
+    ConstraintDescription: Administrator password
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VpcId of your existing Virtual Private Cloud (VPC)
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: SubnetId of an existing subnet (for the primary network) in your
+      Virtual Private Cloud (VPC)
+    ConstraintDescription: must be an existing subnet in the selected Virtual Private
+      Cloud.
+  InstanceType:
+    Description: Access Manager Server EC2 instance type
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+    - t2.medium	
+    - t2.large	
+    - t2.xlarge	
+    - t2.2xlarge	
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m5.large	
+    - m5.xlarge	
+    - m5.2xlarge	
+    - m5.4xlarge
+  AccessManagerInstallerBucket:
+    Type: String  
+    Description: Name of the S3 bucket having Access Manager installer
+    ConstraintDescription: must be an existing S3 bucket name.
+  S3BucketRegion:
+    Type: String  
+    Description: AWS Region of the S3 bucket 
+    ConstraintDescription: must be an existing S3 bucket region.
+  NAMInstallType: 
+    Description: Select the deployment option
+    Default: AdminConsole
+    Type: String
+    AllowedValues: 
+      - AdminConsole
+      - AdminConsole_IdentityServer
+      - AdminConsole_IdentityServer_AccessGateway
+    ConstraintDescription: Select any one of the deployment type
+Conditions:
+  DeployAc: !Or [!Equals [!Ref "NAMInstallType", AdminConsole], !Equals [!Ref "NAMInstallType", AdminConsole_IdentityServer], !Equals [!Ref "NAMInstallType", AdminConsole_IdentityServer_AccessGateway]]
+  DeployAcIdp: !Or [!Equals [!Ref "NAMInstallType", AdminConsole_IdentityServer], !Equals [!Ref "NAMInstallType", AdminConsole_IdentityServer_AccessGateway]]
+  DeployAcIdpMag: !Equals [ !Ref NAMInstallType, AdminConsole_IdentityServer_AccessGateway ]
+  
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+       -
+        Label:
+          default: "Access Manager Configuration"
+        Parameters:
+         - AdminName
+         - AdminPassword
+         - NAMInstallType
+       -
+        Label:
+          default: "Access Manager Installer Location"
+        Parameters:
+         - AccessManagerInstallerBucket
+         - S3BucketRegion
+         - NAMInstallType 
+       -
+        Label:
+          default: "EC2 Configuration"
+        Parameters:
+         - InstanceType
+         - KeyName
+         - VpcId
+         - SubnetId
+    ParameterLabels:
+      AdminName:
+        default: "Administrator"
+      AdminPassword:
+        default: "Password"  
+      NAMInstallType:
+         default: "Access Manager Deployment type"     
+      AccessManagerInstallerBucket:
+        default: "S3 Bucket"
+      S3BucketRegion:
+        default: "Region"
+      InstanceType:
+        default: "Instance Type"
+      KeyName:
+        default: "Key Pair Name"  
+      VpcId:
+        default: "VPC"
+      SubnetId:
+        default: "Subnet"            
+Mappings: 
+  AWSAMIRegionMap:
+    us-east-1:
+      SLES12SP3: ami-3c062943
+    us-east-2:
+      SLES12SP3: ami-cd98a0a8
+    us-west-1: 
+      SLES12SP3: ami-bf5f44df
+    us-west-2:   
+      SLES12SP3: ami-81e29cf9
+    ap-south-1: 
+      SLES12SP3: ami-216d5b4e
+    ap-northeast-2: 
+      SLES12SP3: ami-9f9d29f1
+    ap-southeast-1: 
+      SLES12SP3: ami-f77d021d
+    ap-southeast-2: 
+      SLES12SP3: ami-bad00ad8
+    ap-northeast-1: 
+      SLES12SP3: ami-6bb7d086
+    ca-central-1: 
+      SLES12SP3: ami-61dc5905
+    eu-central-1:
+      SLES12SP3: ami-2cffc5c7
+    eu-west-1: 
+      SLES12SP3: ami-da697f30
+    eu-west-2: 
+      SLES12SP3: ami-dd23cbba
+    eu-west-3: 
+      SLES12SP3: ami-60cc7c1d
+    sa-east-1: 
+      SLES12SP3: ami-9c8fabf0
+Resources:
+  AdminConsoleSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VpcId
+      GroupDescription: Allow access to Admin Console
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '1290'
+        ToPort: '1290'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8443'
+        ToPort: '8443'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8444'
+        ToPort: '8444'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '524'
+        ToPort: '524'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '636'
+        ToPort: '636'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '1289'
+        ToPort: '1289'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: '8'
+        ToPort: '-1'
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: AdminConsoleSG
+  IdentityServerGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VpcId
+      GroupDescription: Allow access to Identity Server
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '1443'
+        ToPort: '1443'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '524'
+        ToPort: '524'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '7801'
+        ToPort: '7801'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '8443'
+        ToPort: '8443'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '1443'
+        ToPort: '1443'
+        CidrIp: 0.0.0.0/0  
+      Tags:
+      - Key: Name
+        Value: IdentityServerSG
+  AccessGatewayGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VpcId
+      GroupDescription: Allow access to Access Gateway Server
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '8445'
+        ToPort: '8445'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '8446'
+        ToPort: '8446'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '7801'
+        ToPort: '7801'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '1443'
+        ToPort: '1443'
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0  
+      Tags:
+      - Key: Name
+        Value: AccessGatewaySG
+
+  AdminConsole:
+    Type: AWS::EC2::Instance
+    Condition: DeployAc
+    Properties: 
+      InstanceType: !Ref InstanceType
+      ImageId: 
+        Fn::FindInMap:
+        - AWSAMIRegionMap
+        - Ref: AWS::Region
+        - SLES12SP3
+      Tags:
+      - Key: Name
+        Value: Admin Console
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'True'
+          DeleteOnTermination: 'True'
+          SubnetId:
+            Ref: SubnetId
+          DeviceIndex: '0'
+          GroupSet:
+          - Ref: AdminConsoleSecurityGroup
+      IamInstanceProfile:
+        Ref: EC2InstanceProfile    
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          zypper -n in python-pip
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          mkdir -p /home/nam
+          cd /home/nam/
+          aws s3 cp s3://${AccessManagerInstallerBucket}/AM_441_AccessManagerService_Linux64.tar.gz  . --region ${S3BucketRegion}
+          tar -zxvf AM_441_AccessManagerService_Linux64.tar.gz
+          cd novell-access-manager-4.4.1.0-148/
+          name=`hostname`
+          ip=`curl http://169.254.169.254/latest/meta-data/local-ipv4`
+          hostline=`echo $ip $name`
+          echo $hostline >> /etc/hosts
+          echo -e "1" "\n""y""\n""y""\n""${AdminName}""\n""${AdminPassword}""\n""${AdminPassword}""\n" | sh -x ./install.sh
+          /usr/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AdminConsole --region ${AWS::Region}
+          
+    CreationPolicy:
+      ResourceSignal:
+        #Count: 0
+        Timeout: PT15M
+
+  IdentityServer:
+    Type: AWS::EC2::Instance
+    DependsOn: AdminConsole
+    Condition: DeployAcIdp    
+    Properties: 
+      InstanceType: !Ref InstanceType
+      ImageId: 
+        Fn::FindInMap:
+        - AWSAMIRegionMap
+        - Ref: AWS::Region
+        - SLES12SP3
+      Tags:
+      - Key: Name
+        Value: Identity Server
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'True'
+          DeleteOnTermination: 'True'
+          SubnetId:
+            Ref: SubnetId
+          DeviceIndex: '0'
+          GroupSet:
+          - Ref: IdentityServerGroup
+      IamInstanceProfile:
+        Ref: EC2InstanceProfile    
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          zypper -n in python-pip
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          mkdir -p /home/nam
+          cd /home/nam/
+          aws s3 cp s3://${AccessManagerInstallerBucket}/AM_441_AccessManagerService_Linux64.tar.gz  . --region ${S3BucketRegion}
+          tar -zxvf AM_441_AccessManagerService_Linux64.tar.gz
+          cd novell-access-manager-4.4.1.0-148/
+          name=`hostname`
+          ip=`curl http://169.254.169.254/latest/meta-data/local-ipv4`
+          hostline=`echo $ip $name`
+          echo $hostline >> /etc/hosts
+          ACPrivIP=`echo "${AdminConsole.PrivateIp}"` 
+          echo -e "2" "\n""y""\n""y""\n""$ACPrivIP""\n""${AdminName}""\n""${AdminPassword}""\n""${AdminPassword}""\n" | sh -x ./install.sh
+          /usr/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource IdentityServer --region ${AWS::Region}
+         
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+   
+  AccessGateway:
+    Type: AWS::EC2::Instance
+    DependsOn: AdminConsole 
+    Condition: DeployAcIdpMag
+    Properties: 
+      InstanceType: !Ref InstanceType
+      ImageId: 
+        Fn::FindInMap:
+        - AWSAMIRegionMap
+        - Ref: AWS::Region
+        - SLES12SP3
+      Tags:
+      - Key: Name
+        Value: Access Gateway
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'True'
+          DeleteOnTermination: 'True'
+          SubnetId:
+            Ref: SubnetId
+          DeviceIndex: '0'
+          GroupSet:
+          - Ref: AccessGatewayGroup
+      IamInstanceProfile:
+        Ref: EC2InstanceProfile    
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          zypper -n in python-pip
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          mkdir -p /home/nam
+          cd /home/nam/
+          aws s3 cp s3://${AccessManagerInstallerBucket}/AM_441_AccessGatewayService_Linux64.tar.gz  . --region ${S3BucketRegion}
+          tar -zxvf AM_441_AccessGatewayService_Linux64.tar.gz
+          cd novell-access-gateway-4.4.1.0-148/
+          name=`hostname`
+          ip=`curl http://169.254.169.254/latest/meta-data/local-ipv4`
+          hostline=`echo $ip $name`
+          echo $hostline >> /etc/hosts
+          ACPrivIP=`echo "${AdminConsole.PrivateIp}"` 
+          echo -e "y" "\n""n""\n""$ACPrivIP""\n""${AdminName}""\n""${AdminPassword}""\n""${AdminPassword}""\n" | sh -x ./ag_install.sh
+          /usr/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AccessGateway --region ${AWS::Region}
+         
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+  EC2S3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: EC2S3Role
+  EC2RolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EC2Policy
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: "s3:GetObject"
+          Resource: "arn:aws:s3:::*/*"
+      Roles:
+      - Ref: EC2S3Role
+Outputs:
+  AdminConsoleURL:
+    Description: URL to login to Admin Console
+    Value:
+      Fn::Join:
+      - ''
+      - - https://
+        - Fn::GetAtt:
+          - AdminConsole
+          - PublicIp
+        - :8443/nps  
